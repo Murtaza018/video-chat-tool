@@ -4,6 +4,7 @@ let remoteSocketId;
 let isCaller = false;
 let videoEnabled = true;
 let micEnabled = true; // Track if microphone is enabled
+let isCallInProgress = false; // Track if a call is in progress
 
 const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
 const socket = io("http://localhost:3000");
@@ -29,6 +30,11 @@ document.getElementById("startCall").addEventListener("click", () => {
     console.warn("Cannot start call. Local stream not initialized.");
     return;
   }
+  if (isCallInProgress) {
+    console.log("Call already in progress.");
+    return;
+  }
+  isCallInProgress = true;
   isCaller = true;
   console.log("Start Call button clicked. Emitting startCall signal.");
   socket.emit("startCall", socket.id);
@@ -45,7 +51,15 @@ document.getElementById("turnOffVideo").addEventListener("click", () => {
 document.getElementById("toggleMic").addEventListener("click", () => {
   micEnabled = !micEnabled;
   toggleMicrophone(micEnabled); // Toggle microphone state
+  socket.emit("micStateChange", micEnabled); // Emit microphone state change
   console.log(`Microphone is now ${micEnabled ? "enabled" : "disabled"}`);
+});
+
+// End Call Button
+document.getElementById("endCall").addEventListener("click", () => {
+  console.log("End Call button clicked. Ending the call.");
+  socket.emit("endCall", socket.id); // Emit end call event to the server
+  endCall(); // End local call by closing peer connection and stopping media
 });
 
 // Start Call Event Handler
@@ -62,6 +76,18 @@ socket.on("videoStateChange", (videoState) => {
     videoEnabled = videoState;
     toggleRemoteVideo(videoState);
   }
+});
+
+// Microphone State Change Event Handler
+socket.on("micStateChange", (micState) => {
+  console.log("Remote peer changed microphone state:", micState);
+  toggleRemoteMic(micState); // Toggle remote microphone state
+});
+
+// End Call Event Handler
+socket.on("endCall", (callerId) => {
+  console.log(`${callerId} ended the call.`);
+  endCall(); // End the call on the local side as well
 });
 
 // Signal Event Handler
@@ -104,8 +130,12 @@ function handleCandidate(candidate) {
 
 // Create Peer Connection
 function createPeerConnection() {
-  if (peerConnection) return;
-  console.log("Creating new RTCPeerConnection.");
+  if (peerConnection) {
+    console.log("Peer connection already exists. Reusing.");
+    return; // Ensure we don't create a new connection if one exists
+  }
+
+  console.log("Creating a new RTCPeerConnection.");
   peerConnection = new RTCPeerConnection({ iceServers });
 
   peerConnection.onicecandidate = (event) => {
@@ -168,6 +198,42 @@ function toggleMicrophone(isEnabled) {
   } else {
     console.warn("No audio track found in local stream.");
   }
+}
+
+// Toggle Remote Microphone
+function toggleRemoteMic(isEnabled) {
+  // Here you could add functionality to mute/unmute remote audio if supported
+  console.log(
+    `Remote microphone is now ${isEnabled ? "enabled" : "disabled"}.`
+  );
+}
+
+// End the call
+function endCall() {
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+    console.log("Peer connection closed.");
+  }
+  if (localStream) {
+    localStream.getTracks().forEach((track) => track.stop());
+    console.log("Local stream stopped.");
+  }
+  document.getElementById("remoteVideo").srcObject = null; // Clear remote video
+  resetUI(); // Reset the UI for a new call
+  console.log("Call ended.");
+}
+
+// Reset UI elements for a new call
+function resetUI() {
+  isCaller = false;
+  videoEnabled = true;
+  micEnabled = true;
+  document.getElementById("turnOffVideo").disabled = false;
+  document.getElementById("toggleMic").disabled = false;
+  document.getElementById("endCall").disabled = true;
+  document.getElementById("startCall").disabled = false; // Enable start call button again
+  isCallInProgress = false; // Reset call in progress state
 }
 
 // Send Signal to Server

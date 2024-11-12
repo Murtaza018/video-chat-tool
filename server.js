@@ -30,26 +30,29 @@ io.on("connection", (socket) => {
   });
 
   socket.on("signal", (data) => {
-    const targetSocket = io.sockets.sockets.get(data.to);
-    if (targetSocket) {
-      targetSocket.emit("signal", {
-        from: socket.id,
-        signalData: data.signalData,
-      });
-    }
+    console.log(`Signal data from ${socket.id}:`, data.signalData);
+    socket.to(data.to).emit("signal", {
+      from: socket.id,
+      signalData: data.signalData,
+    });
+  });
+
+  socket.on("endCall", (callerId) => {
+    console.log(`${callerId} ended the call.`);
+    socket.broadcast.emit("endCall", callerId);
   });
 
   socket.on("videoStateChange", (videoState) => {
+    console.log("Video state changed:", videoState);
     socket.broadcast.emit("videoStateChange", videoState);
   });
-  // disconnect user
+
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-    io.emit("userDisconnected", socket.id);
+    console.log("A user disconnected:", socket.id);
   });
 });
 
-// Start server
+// Start the server
 server.listen(3000, () => {
-  console.log("Signaling server is running on http://localhost:3000");
+  console.log("Server is running on port 3000");
 });
