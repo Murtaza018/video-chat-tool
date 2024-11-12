@@ -1,13 +1,11 @@
 let localStream;
 let peerConnection;
 let remoteSocketId;
-let isCaller = false; // Track whether this tab is the caller
-let videoEnabled = true; // Track if video is enabled
+let isCaller = false;
+let videoEnabled = true;
+let micEnabled = true; // Track if microphone is enabled
 
-// STUN server URL
 const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
-
-// Initialize socket connection
 const socket = io("http://localhost:3000");
 
 // Capture video and audio
@@ -18,110 +16,112 @@ async function startCapture() {
       audio: true,
     });
     localStream = stream;
-    const localVideo = document.getElementById("localVideo");
-    localVideo.srcObject = stream;
-
-    console.log("Successfully started capturing audio and video");
+    document.getElementById("localVideo").srcObject = stream;
+    console.log("Successfully started capturing audio and video.");
   } catch (error) {
-    console.error("Error accessing media devices.", error);
+    console.error("Error accessing media devices:", error);
   }
 }
 
-// When Start Call button is clicked
+// Start Call Button
 document.getElementById("startCall").addEventListener("click", () => {
-  isCaller = true; // Mark this tab as the caller
+  if (!localStream) {
+    console.warn("Cannot start call. Local stream not initialized.");
+    return;
+  }
+  isCaller = true;
   console.log("Start Call button clicked. Emitting startCall signal.");
-  socket.emit("startCall", socket.id); // Emit start call signal to the server
+  socket.emit("startCall", socket.id);
 });
 
-// When Turn Off Video button is clicked
+// Turn Off Video Button
 document.getElementById("turnOffVideo").addEventListener("click", () => {
-  videoEnabled = !videoEnabled; // Toggle video state
-  console.log("Toggling video. Video state is now:", videoEnabled);
-  toggleVideo(videoEnabled); // Toggle video on/off
-  socket.emit("videoStateChange", videoEnabled); // Send video state to the other client
+  videoEnabled = !videoEnabled;
+  toggleVideo(videoEnabled);
+  socket.emit("videoStateChange", videoEnabled);
 });
 
-// Handle incoming "startCall" from the other client
+// Toggle Microphone Button
+document.getElementById("toggleMic").addEventListener("click", () => {
+  micEnabled = !micEnabled;
+  toggleMicrophone(micEnabled); // Toggle microphone state
+  console.log(`Microphone is now ${micEnabled ? "enabled" : "disabled"}`);
+});
+
+// Start Call Event Handler
 socket.on("startCall", (callerId) => {
-  console.log(`${callerId} wants to start a call`);
-  remoteSocketId = callerId; // Store the caller's socket ID
-  // Initiate the offer from this tab (answering the call)
-  createOffer();
+  console.log(`${callerId} wants to start a call.`);
+  remoteSocketId = callerId;
+  if (!peerConnection) createOffer();
 });
 
-// Handle incoming "videoStateChange" from the other client
+// Video State Change Event Handler
 socket.on("videoStateChange", (videoState) => {
   console.log("Remote peer changed video state:", videoState);
-  videoEnabled = videoState; // Update the local state of video
-  toggleVideo(videoState); // Update the local video stream
+  if (remoteSocketId) {
+    videoEnabled = videoState;
+    toggleRemoteVideo(videoState);
+  }
 });
 
-// Handle incoming "signal" from the server
+// Signal Event Handler
 socket.on("signal", async (data) => {
   const { from, signalData } = data;
-  console.log("Received signal from:", from);
-  console.log("Signal data:", signalData);
+  console.log("Received signal from:", from, "Signal data:", signalData);
 
   if (signalData.type === "offer") {
     remoteSocketId = from;
-    console.log("Handling offer from:", from);
     await handleOffer(signalData.offer);
   } else if (signalData.type === "answer") {
-    console.log("Handling answer from:", from);
     await peerConnection.setRemoteDescription(signalData.answer);
   } else if (signalData.type === "candidate") {
-    console.log("Handling ICE candidate from:", from);
     await handleCandidate(signalData.candidate);
   }
 });
 
-// Create the WebRTC peer connection
+// Create Offer
 async function createOffer() {
   createPeerConnection();
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  sendSignal(remoteSocketId, { type: "offer", offer: offer });
+  sendSignal(remoteSocketId, { type: "offer", offer });
   console.log("Offer created and sent to:", remoteSocketId);
 }
 
-// Handle incoming offer and create an answer
+// Handle Offer
 async function handleOffer(offer) {
   createPeerConnection();
   await peerConnection.setRemoteDescription(offer);
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
-  sendSignal(remoteSocketId, { type: "answer", answer: answer });
-  console.log("Answer created and sent to:", remoteSocketId);
+  sendSignal(remoteSocketId, { type: "answer", answer });
 }
 
-// Handle incoming ICE candidate
+// Handle Candidate
 function handleCandidate(candidate) {
   peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
 }
 
-// Create the WebRTC peer connection and add event listeners
+// Create Peer Connection
 function createPeerConnection() {
-  console.log("Creating new RTCPeerConnection");
+  if (peerConnection) return;
+  console.log("Creating new RTCPeerConnection.");
   peerConnection = new RTCPeerConnection({ iceServers });
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log("ICE candidate found:", event.candidate);
       sendSignal(remoteSocketId, {
         type: "candidate",
         candidate: event.candidate,
       });
-    } else {
-      console.log("ICE candidate gathering finished.");
     }
   };
 
   peerConnection.ontrack = (event) => {
     const remoteVideo = document.getElementById("remoteVideo");
     if (event.streams[0]) {
-      remoteVideo.srcObject = event.streams[0]; // Assign the remote stream to the remote video element
-      console.log("Remote video stream received");
+      remoteVideo.srcObject = event.streams[0];
+      console.log("Remote video stream received.");
     } else {
       console.log("No remote stream received.");
     }
@@ -133,25 +133,47 @@ function createPeerConnection() {
   });
 }
 
-// Toggle video track on/off
+// Toggle Local Video Track
 function toggleVideo(isEnabled) {
+  if (!localStream) {
+    console.warn("Local stream not available for toggling video.");
+    return;
+  }
   const videoTrack = localStream.getVideoTracks()[0];
   if (videoTrack) {
-    videoTrack.enabled = isEnabled; // Enable or disable video track
-    console.log(`Video track is now ${isEnabled ? "enabled" : "disabled"}`);
+    videoTrack.enabled = isEnabled;
+    console.log(
+      `Local video track is now ${isEnabled ? "enabled" : "disabled"}.`
+    );
+  } else {
+    console.warn("No video track found in local stream.");
   }
 }
 
-// Send signal to the other peer via the signaling server
+// Toggle Remote Video
+function toggleRemoteVideo(isEnabled) {
+  const remoteVideo = document.getElementById("remoteVideo");
+  remoteVideo.style.display = isEnabled ? "block" : "none"; // Hide or show remote video
+  console.log(`Remote video is now ${isEnabled ? "visible" : "hidden"}.`);
+}
+
+// Toggle Microphone
+function toggleMicrophone(isEnabled) {
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (audioTrack) {
+    audioTrack.enabled = isEnabled;
+    console.log(
+      `Local microphone is now ${isEnabled ? "enabled" : "disabled"}.`
+    );
+  } else {
+    console.warn("No audio track found in local stream.");
+  }
+}
+
+// Send Signal to Server
 function sendSignal(toSocketId, signalData) {
-  console.log("Sending signal to:", toSocketId);
   socket.emit("signal", { to: toSocketId, signalData });
 }
 
-// When connected to signaling server
-socket.on("connect", () => {
-  console.log("Connected to signaling server as:", socket.id);
-});
-
-// Start video and audio capture when the page loads
+// Start video and audio capture on load
 startCapture();

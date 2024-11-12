@@ -3,22 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WebRTC Signaling Client</title>
+    <title>Video chat</title>
   </head>
   <body>
-    <h1>WebRTC Signaling Client</h1>
+    <h1>Video Chat</h1>
 
-    <!-- Start Call Button -->
     <button id="startCall">Start Call</button>
-    <!-- Turn off Video Button -->
     <button id="turnOffVideo">Turn Off Video</button>
+    <button id="toggleMic">Toggle Microphone</button>
+    <!-- Microphone toggle button -->
 
-    <!-- Local video stream -->
     <video id="localVideo" autoplay muted playsinline></video>
-    <!-- Remote video stream -->
     <video id="remoteVideo" autoplay playsinline></video>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="client.js"></script>
+    <script src="/client.js"></script>
   </body>
 </html>
