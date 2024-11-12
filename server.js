@@ -42,7 +42,7 @@ io.on("connection", (socket) => {
   socket.on("videoStateChange", (videoState) => {
     socket.broadcast.emit("videoStateChange", videoState);
   });
-
+  // disconnect user
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
     io.emit("userDisconnected", socket.id);
